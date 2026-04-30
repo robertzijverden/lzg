@@ -1,0 +1,10 @@
+{
+  "OSVersion": "Windows 11",
+  "OSBuild": "24H2",
+  "OSEdition": "Pro",
+  "OSLanguage": "nl-nl",
+  "OSActivation": "Retail",
+  "RunWindowsUpdate": true,
+  "InstallOfflineDrivers": true,
+  "RunVendorTools": true
+}
