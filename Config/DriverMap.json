@@ -1,0 +1,18 @@
+﻿{
+  "Dell": {
+    "Latitude 3520": "Dell\\Latitude 3520"
+  },
+  "HP": {
+    "ProBook 4": "HP\\HP ProBook G4",
+    "ProBook 5": "HP\\HP ProBook G5",
+    "ProBook 6": "HP\\HP ProBook G1",
+    "ProBook 8": "HP\\HP ProBook G8",
+    "ProBook 10": "HP\\HP ProBook G10",
+    "ProBook 11": "HP\\HP ProBook G11"
+  },
+  "Microsoft": {
+    "Surface Go 2": "Surface\\Surface Go 2",
+    "Surface Go 3": "Surface\\Surface Go 3",
+    "Surface Go 4": "Surface\\Surface Go 4"
+  }
+}

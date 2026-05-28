@@ -1,0 +1,48 @@
+{
+  "RepoOwner": "robertzijverden",
+  "RepoName": "lzg",
+  "ReleaseTagPrefix": "vendor-updates",
+  "ReleaseName": "Vendor updates",
+  "ReleaseBody": "Automatische upload van nieuwste vendor driver- en firmware-zipbestanden.",
+  "Draft": false,
+  "Prerelease": false,
+  "OverwriteExistingAssets": true,
+  "VendorPackages": [
+    {
+      "Vendor": "Dell",
+      "Name": "dell-drivers.zip",
+      "DownloadUrl": "https://example.com/dell/dell-drivers.zip",
+      "AssetName": "dell-drivers.zip"
+    },
+    {
+      "Vendor": "HP",
+      "Name": "hp-drivers.zip",
+      "DownloadUrl": "https://example.com/hp/hp-drivers.zip",
+      "AssetName": "hp-drivers.zip"
+    },
+    {
+      "Vendor": "Microsoft",
+      "Name": "surface-drivers.zip",
+      "DownloadUrl": "https://example.com/microsoft/surface-drivers.zip",
+      "AssetName": "surface-drivers.zip"
+    },
+    {
+      "Vendor": "Dell",
+      "Name": "dell-firmware.zip",
+      "DownloadUrl": "https://example.com/dell/dell-firmware.zip",
+      "AssetName": "dell-firmware.zip"
+    },
+    {
+      "Vendor": "HP",
+      "Name": "hp-firmware.zip",
+      "DownloadUrl": "https://example.com/hp/hp-firmware.zip",
+      "AssetName": "hp-firmware.zip"
+    },
+    {
+      "Vendor": "Microsoft",
+      "Name": "surface-firmware.zip",
+      "DownloadUrl": "https://example.com/microsoft/surface-firmware.zip",
+      "AssetName": "surface-firmware.zip"
+    }
+  ]
+}

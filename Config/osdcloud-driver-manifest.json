@@ -1,0 +1,50 @@
+{
+  "Dell": {
+    "CatalogUrl": "https://downloads.dell.com/catalog/DriverPackCatalog.cab",
+    "Models": [
+      {
+        "Name": "Dell Latitude 3520",
+        "Match": "Latitude 3520",
+        "OperatingSystem": "Windows 11",
+        "LocalPath": "DriverPacks/Dell/Latitude 3520"
+      }
+    ]
+  },
+  "HP": {
+    "CatalogUrl": "https://hpia.hpcloud.hp.com/downloads/driverpackcatalog/HPClientDriverPackCatalog.cab",
+    "Models": [
+      {
+        "Name": "HP ProBook G4-G11",
+        "MatchRegex": "(?i)\\bProBook\\b.*\\bG(4|5|6|7|8|9|10|11)\\b",
+        "OperatingSystem": "Windows 11",
+        "LocalPathRoot": "DriverPacks/HP"
+      }
+    ]
+  },
+  "Microsoft": {
+    "Models": [
+      {
+        "Name": "Surface Go 2",
+        "DownloadPageId": 101304,
+        "OperatingSystem": "Windows 10/11",
+        "LocalPath": "DriverPacks/Surface/Surface Go 2"
+      },
+      {
+        "Name": "Surface Go 3",
+        "DownloadPageId": 103504,
+        "OperatingSystem": "Windows 11",
+        "LocalPath": "DriverPacks/Surface/Surface Go 3"
+      },
+      {
+        "Name": "Surface Go 4",
+        "DownloadPageId": 105609,
+        "OperatingSystem": "Windows 11",
+        "LocalPath": "DriverPacks/Surface/Surface Go 4"
+      }
+    ]
+  },
+  "Tools": {
+    "DownloadVendorTools": false,
+    "Comment": "Offline driverpacks bevatten drivers en firmware. Dell/HP online tools kunnen later apart worden toegevoegd, maar zijn niet nodig voor de USB offline basis."
+  }
+}
