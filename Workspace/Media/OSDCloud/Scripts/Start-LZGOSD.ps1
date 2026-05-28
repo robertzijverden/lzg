@@ -1,20 +1,45 @@
 ﻿$ErrorActionPreference = "Stop"
 $ConfigUrl = "https://raw.githubusercontent.com/robertzijverden/lzg/main/osdcloud-config.json"
 
-function Get-LZGUSBRoot {
-    $volumes = Get-Volume | Where-Object {
-        $_.DriveLetter -and (Test-Path "$($_.DriveLetter):\OSDCloud")
+function Get-LZGOSDCloudDataRoot {
+    $volumes = Get-Volume | Where-Object { $_.DriveLetter }
+
+    $dataVolume = $volumes | Where-Object {
+        (Test-Path "$($_.DriveLetter):\OSDCloud\Config") -or
+        (Test-Path "$($_.DriveLetter):\OSDCloud\DriverPacks")
+    } | Select-Object -First 1
+
+    if ($dataVolume) {
+        return "$($dataVolume.DriveLetter):\OSDCloud"
     }
 
-    if (-not $volumes) {
-        throw "USB root niet gevonden."
+    $bootVolume = $volumes | Where-Object {
+        Test-Path "$($_.DriveLetter):\OSDCloud"
+    } | Select-Object -First 1
+
+    if ($bootVolume) {
+        return "$($bootVolume.DriveLetter):\OSDCloud"
     }
 
-    return "$($volumes[0].DriveLetter):\"
+    throw "OSDCloud USB data root niet gevonden."
 }
 
-$UsbRoot = Get-LZGUSBRoot
-$LogDir = "$UsbRoot\OSDCloud\Logs"
+function Get-LZGOSDCloudBootRoot {
+    $volumes = Get-Volume | Where-Object { $_.DriveLetter }
+    $bootVolume = $volumes | Where-Object {
+        Test-Path "$($_.DriveLetter):\OSDCloud\PostInstall"
+    } | Select-Object -First 1
+
+    if ($bootVolume) {
+        return "$($bootVolume.DriveLetter):\OSDCloud"
+    }
+
+    return $null
+}
+
+$UsbRoot = Get-LZGOSDCloudDataRoot
+$BootRoot = Get-LZGOSDCloudBootRoot
+$LogDir = "$UsbRoot\Logs"
 New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 
 Start-Transcript -Path "$LogDir\WinPE-Deploy.log" -Append
@@ -49,23 +74,35 @@ Write-Host "OSBuild:    $($Config.OSBuild)"
 Write-Host "OSEdition:  $($Config.OSEdition)"
 Write-Host "OSLanguage: $($Config.OSLanguage)"
 
-Start-OSDCloud 
-    -OSVersion $Config.OSVersion 
-    -OSBuild $Config.OSBuild 
-    -OSEdition $Config.OSEdition 
-    -OSLanguage $Config.OSLanguage 
-    -OSActivation $Config.OSActivation 
-    -ZTI
+$osdCloudParams = @{
+    OSVersion    = $Config.OSVersion
+    OSBuild      = $Config.OSBuild
+    OSEdition    = $Config.OSEdition
+    OSLanguage   = $Config.OSLanguage
+    OSActivation = $Config.OSActivation
+    ZTI          = $true
+}
+
+Start-OSDCloud @osdCloudParams
 
 Write-Host "Post-install bestanden kopieren naar Windows."
 
 $TargetRoot = "C:\ProgramData\LZGOSD"
 New-Item -ItemType Directory -Path $TargetRoot -Force | Out-Null
 
-Copy-Item "$UsbRoot\OSDCloud\PostInstall" "$TargetRoot\PostInstall" -Recurse -Force
-Copy-Item "$UsbRoot\DriverPacks" "$TargetRoot\DriverPacks" -Recurse -Force
-Copy-Item "$UsbRoot\Tools" "$TargetRoot\Tools" -Recurse -Force
-Copy-Item "$UsbRoot\Config" "$TargetRoot\Config" -Recurse -Force
+if ($BootRoot -and (Test-Path "$BootRoot\PostInstall")) {
+    Copy-Item "$BootRoot\PostInstall" "$TargetRoot\PostInstall" -Recurse -Force
+}
+elseif (Test-Path "$UsbRoot\PostInstall") {
+    Copy-Item "$UsbRoot\PostInstall" "$TargetRoot\PostInstall" -Recurse -Force
+}
+else {
+    Write-Warning "PostInstall map niet gevonden op OSDCloud USB."
+}
+
+Copy-Item "$UsbRoot\DriverPacks" "$TargetRoot\DriverPacks" -Recurse -Force -ErrorAction SilentlyContinue
+Copy-Item "$UsbRoot\DriverPacks\VendorTools" "$TargetRoot\Tools" -Recurse -Force -ErrorAction SilentlyContinue
+Copy-Item "$UsbRoot\Config" "$TargetRoot\Config" -Recurse -Force -ErrorAction SilentlyContinue
 
 $SetupScripts = "C:\Windows\Setup\Scripts"
 New-Item -ItemType Directory -Path $SetupScripts -Force | Out-Null

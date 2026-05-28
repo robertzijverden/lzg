@@ -1,8 +1,10 @@
 param(
     [string]$Root = "$PSScriptRoot",
-    [string]$OutputFolder = "$PSScriptRoot\Workspace\USB",
-    [string]$UsbDriveLetter = '',
-    [switch]$CatalogOnly
+    [string]$WorkspacePath = "$PSScriptRoot\Workspace",
+    [switch]$CatalogOnly,
+    [switch]$UpdatePhysicalUSB,
+    [switch]$CreatePhysicalUSB,
+    [switch]$PSUpdate
 )
 
 function Write-Log {
@@ -92,32 +94,37 @@ else {
     Write-Log "Update-DriverPacks.ps1 niet gevonden: $driverPackScript"
 }
 
-# Bouw de USB-image in Workspace\USB
+# Synchroniseer de LZG bestanden naar de OSDCloud workspace.
 $buildScript = Join-Path $Root 'Build-OSDCloudUSB.ps1'
 if (Test-Path $buildScript) {
-    Write-Log "Bouw de USB masterfolder."
-    & $buildScript -Force
+    Write-Log "Synchroniseer LZG bestanden naar de OSDCloud workspace."
+    & $buildScript -WorkspacePath $WorkspacePath -Force
 }
 else {
     throw "Build-OSDCloudUSB.ps1 niet gevonden: $buildScript"
 }
 
-if ($UsbDriveLetter) {
-    $UsbDrive = "$UsbDriveLetter`:"
-    if (-not (Test-Path $UsbDrive)) {
-        throw "USB-station niet gevonden op letter: $UsbDriveLetter"
+if ($CreatePhysicalUSB -or $UpdatePhysicalUSB -or $PSUpdate) {
+    Import-Module OSD -Force
+    Set-OSDCloudWorkspace -WorkspacePath $WorkspacePath | Out-Null
+
+    if ($CreatePhysicalUSB) {
+        Write-Log "Nieuwe bootbare OSDCloud USB maken via OSD command: New-OSDCloudUSB"
+        New-OSDCloudUSB -WorkspacePath $WorkspacePath
     }
 
-    Write-Log "Kopieer bestanden naar USB: $UsbDrive"
-    Get-ChildItem -Path $OutputFolder -Force | ForEach-Object {
-        $target = Join-Path $UsbDrive $_.Name
-        if (Test-Path $target) {
-            Remove-Item -Path $target -Recurse -Force -ErrorAction SilentlyContinue
+    if ($UpdatePhysicalUSB -or $PSUpdate) {
+        Write-Log "Bestaande OSDCloud USB bijwerken via OSD command: Update-OSDCloudUSB"
+        if ($PSUpdate) {
+            Update-OSDCloudUSB -PSUpdate
         }
-        Copy-Item -Path $_.FullName -Destination $UsbDrive -Recurse -Force
+        else {
+            Update-OSDCloudUSB
+        }
     }
-    Write-Log "USB bijgewerkt op $UsbDrive"
 }
 
 Write-Log "OSDCloud USB update voltooid."
-Write-Log "Gebruik $OutputFolder als master USB-output of kopieer handmatig naar een geformatteerde USB-stick."
+Write-Log "Gebruik OSD commands voor fysieke USB:"
+Write-Log "  Nieuwe USB:      .\Update-OSDCloudUSB.ps1 -CreatePhysicalUSB"
+Write-Log "  Bestaande USB:   .\Update-OSDCloudUSB.ps1 -UpdatePhysicalUSB"

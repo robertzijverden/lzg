@@ -1,82 +1,79 @@
 # OSDCloud USB Build en Update
 
 ## Doel
-Deze scripts maken een up-to-date OSDCloud USB-masterkopie voor:
+Deze scripts maken een up-to-date OSDCloud USB voor:
+
 - Microsoft Surface Go 2, Go 3 en Go 4
-- HP ProBook G4 ... G11 series
+- HP ProBook G4 t/m G11 series
 - Dell Latitude 3520
 
-De build bevat Windows 11-installatie en offline driver-/firmwarepakketten.
+De bootmedia blijft beheerd door OSDCloud. De LZG scripts voegen alleen config, post-install scripts en offline driver-/firmwarepakketten toe aan de bestaande OSDCloud workspace. Daardoor blijft de USB via de normale OSDCloud/ADK route Secure Boot-compatible.
 
 ## Gebruik
 
-1. Open PowerShell in `C:\OSDCloud-LZG`.
-2. Voer uit:
+Open PowerShell als administrator:
 
 ```powershell
-.\Update-OSDCloudUSB.ps1
+cd C:\OSDCloud-LZG
 ```
 
-3. Wil je direct naar een USB-schijf schrijven?
-
-```powershell
-.\Update-OSDCloudUSB.ps1 -UsbDriveLetter E
-```
-
-4. De mastercopy verschijnt in `Workspace\USB`.
-
-## Wat gebeurt er
-
-- `Update-OSDCloudUSB.ps1`
-  - synchroniseert `osdcloud-config.json` vanuit de openbare GitHub root via raw.githubusercontent.com
-  - werkt offline driverpacks bij via `Config/osdcloud-driver-manifest.json`
-  - bouwt `Workspace\USB` met bootmedia + `Config`, `DriverPacks`, `Tools`
-
-- `Build-OSDCloudUSB.ps1`
-  - kopieert alleen de benodigde bestanden naar de USB-buildmap
-
-- `Update-DriverPacks.ps1`
-  - haalt Dell Latitude 3520 op via Dell Driver Pack Catalog
-  - haalt HP ProBook G4 t/m G11 op via HP Client Driver Pack Catalog
-  - haalt Surface Go 2, Go 3 en Go 4 op via de OSDCloud Surface-catalogus
-  - pakt de pakketten uit naar `DriverPacks`
-
-## Belangrijk
-
-- Plaats je eigen Windows 11 bootmedia in `Workspace\Media`.
-- De vendor-downloads komen rechtstreeks van Dell, HP en Microsoft; je hoeft geen driver-ZIPs meer in GitHub te zetten.
-- Pas `Config/osdcloud-config.json` en `Config/osdcloud-driver-manifest.json` alleen aan als je modellen wilt toevoegen of verwijderen.
-
-## Vendor catalogus testen
-
-Controleer eerst of de officiële vendor-catalogi bereikbaar zijn zonder grote downloads:
-
-```powershell
-.\Update-DriverPacks.ps1 -CatalogOnly
-```
-
-Of test de volledige USB-flow zonder grote driverdownloads:
+Test eerst zonder grote downloads:
 
 ```powershell
 .\Update-OSDCloudUSB.ps1 -CatalogOnly
 ```
 
-Per vendor:
+Download daarna de driverpacks en synchroniseer de OSDCloud workspace:
 
 ```powershell
-.\Update-DriverPacks.ps1 -CatalogOnly -Vendor Dell
-.\Update-DriverPacks.ps1 -CatalogOnly -Vendor HP
-.\Update-DriverPacks.ps1 -CatalogOnly -Vendor Microsoft
+.\Update-OSDCloudUSB.ps1
 ```
 
-Download en pak alles echt uit:
+Maak een nieuwe bootbare USB via het officiele OSD command:
 
 ```powershell
-.\Update-DriverPacks.ps1
+.\Update-OSDCloudUSB.ps1 -CreatePhysicalUSB
 ```
 
-Daarna USB opnieuw bouwen:
+Werk een bestaande OSDCloud USB bij via het officiele OSD command:
 
 ```powershell
-.\Update-OSDCloudUSB.ps1 -UsbDriveLetter E
+.\Update-OSDCloudUSB.ps1 -UpdatePhysicalUSB
 ```
+
+## OSD commands handmatig
+
+Je kunt de fysieke USB ook volledig handmatig met OSDCloud commands beheren:
+
+```powershell
+Import-Module OSD
+Set-OSDCloudWorkspace -WorkspacePath C:\OSDCloud-LZG\Workspace
+New-OSDCloudUSB
+Update-OSDCloudUSB
+```
+
+Gebruik geen handmatige bestandskopie om de bootmedia te maken. `New-OSDCloudUSB` partitioneert en maakt de USB bootbaar op de OSDCloud manier.
+
+## Wat gebeurt er
+
+- `Update-OSDCloudUSB.ps1`
+  - synchroniseert `osdcloud-config.json` vanuit GitHub
+  - haalt vendor driverpacks op
+  - synchroniseert `Config`, `DriverPacks` en `Tools` naar de OSDCloud workspace
+  - kan optioneel OSD's eigen `New-OSDCloudUSB` of `Update-OSDCloudUSB` starten
+
+- `Build-OSDCloudUSB.ps1`
+  - wijzigt geen bootstructuur
+  - kopieert alleen LZG-bestanden naar `Workspace\Config`, `Workspace\DriverPacks` en `Workspace\DriverPacks\VendorTools`
+
+- `Update-DriverPacks.ps1`
+  - haalt Dell Latitude 3520 op via Dell Driver Pack Catalog
+  - haalt HP ProBook G4 t/m G11 op via HP Client Driver Pack Catalog
+  - haalt Surface Go 2, Go 3 en Go 4 op via de OSDCloud Surface-catalogus
+
+## Belangrijk
+
+- Laat `Workspace\Media` door OSDCloud maken en onderhouden.
+- De vendor-downloads komen rechtstreeks van Dell, HP en Microsoft.
+- Je hoeft geen driver-ZIPs meer in GitHub te zetten.
+- Pas `Config\osdcloud-driver-manifest.json` alleen aan als je modellen wilt toevoegen of verwijderen.
