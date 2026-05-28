@@ -25,7 +25,8 @@ try {
     foreach ($remoteConfig in $remoteConfigUrls) {
         Write-Log "Proberen configuratie op te halen van GitHub: $remoteConfig"
         try {
-            $configContent = Invoke-WebRequest -Uri $remoteConfig -UseBasicParsing -ErrorAction Stop | Select-Object -ExpandProperty Content
+            $response = Invoke-WebRequest -Uri $remoteConfig -UseBasicParsing -ErrorAction Stop
+            $configContent = ([string]$response.Content).TrimStart([char]0xFEFF)
             Write-Log "Configuratie gevonden op GitHub: $remoteConfig"
             break
         }
