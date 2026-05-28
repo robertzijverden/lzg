@@ -14,8 +14,8 @@
     "CatalogUrl": "https://hpia.hpcloud.hp.com/downloads/driverpackcatalog/HPClientDriverPackCatalog.cab",
     "Models": [
       {
-        "Name": "HP ProBook G4-G11",
-        "MatchRegex": "(?i)\\bProBook\\b.*\\bG(4|5|6|7|8|9|10|11)\\b",
+        "Name": "HP ProBook mainstream G4-G11",
+        "MatchRegex": "(?i)\\bProBook\\b\\s+(430|440|445|450|455|460|465|630|640|650)\\b.*\\bG(4|5|6|7|8|9|10|11)\\b",
         "OperatingSystem": "Windows 11",
         "LocalPathRoot": "DriverPacks/HP"
       }

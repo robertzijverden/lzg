@@ -3,11 +3,13 @@ param(
     [ValidateSet('All', 'Dell', 'HP', 'Microsoft')]
     [string]$Vendor = 'All',
     [switch]$CatalogOnly,
-    [switch]$SkipTools
+    [switch]$SkipTools,
+    [switch]$Force
 )
 
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$script:ExtractedPackageCache = @{}
 
 function Write-Log {
     param([string]$Message)
@@ -38,7 +40,118 @@ function Save-SourceFile {
 
     Ensure-Path (Split-Path $Destination)
     Write-Log "Downloaden: $Url"
-    Invoke-WebRequest -Uri $Url -OutFile $Destination -UseBasicParsing
+    $webClient = [System.Net.WebClient]::new()
+    try {
+        $webClient.DownloadFile($Url, $Destination)
+    }
+    finally {
+        $webClient.Dispose()
+    }
+}
+
+function Get-CachePath {
+    param([string]$FileName)
+    $cacheRoot = Join-Path $Root 'DriverPacks\_Cache'
+    Ensure-Path $cacheRoot
+    Join-Path $cacheRoot $FileName
+}
+
+function Get-CatalogCachePath {
+    param([string]$FileName)
+    $cacheRoot = Join-Path $Root 'DriverPacks\_Cache\Catalogs'
+    Ensure-Path $cacheRoot
+    Join-Path $cacheRoot $FileName
+}
+
+function Save-CatalogFileCached {
+    param(
+        [string]$Url,
+        [string]$FileName
+    )
+
+    $cachePath = Get-CatalogCachePath -FileName $FileName
+    if ((Test-Path $cachePath) -and -not $Force) {
+        $age = (Get-Date) - (Get-Item $cachePath).LastWriteTime
+        if ($age.TotalHours -lt 12) {
+            Write-Log "Catalog cache gebruikt: $FileName"
+            return $cachePath
+        }
+    }
+
+    Save-SourceFile -Url $Url -Destination $cachePath
+    return $cachePath
+}
+
+function Save-SourceFileCached {
+    param(
+        [string]$Url,
+        [string]$FileName
+    )
+
+    $cachePath = Get-CachePath -FileName $FileName
+    if ((Test-Path $cachePath) -and -not $Force) {
+        Write-Log "Cache gebruikt: $FileName"
+        return $cachePath
+    }
+
+    Save-SourceFile -Url $Url -Destination $cachePath
+    return $cachePath
+}
+
+function Get-PackageMetadataPath {
+    param([string]$TargetFolder)
+    Join-Path $TargetFolder '.lzg-driverpack.json'
+}
+
+function Test-PackageCurrent {
+    param(
+        [string]$TargetFolder,
+        [string]$Url,
+        [string]$PackageId,
+        [string]$Hash
+    )
+
+    if ($Force -or -not (Test-Path $TargetFolder)) {
+        return $false
+    }
+
+    $metadataPath = Get-PackageMetadataPath -TargetFolder $TargetFolder
+    if (-not (Test-Path $metadataPath)) {
+        return $false
+    }
+
+    try {
+        $metadata = Get-Content -Path $metadataPath -Raw | ConvertFrom-Json
+        return (
+            $metadata.Url -eq $Url -and
+            $metadata.PackageId -eq $PackageId -and
+            ([string]$metadata.Hash -eq [string]$Hash)
+        )
+    }
+    catch {
+        return $false
+    }
+}
+
+function Set-PackageMetadata {
+    param(
+        [string]$TargetFolder,
+        [string]$Vendor,
+        [string]$Model,
+        [string]$PackageId,
+        [string]$Url,
+        [string]$Hash
+    )
+
+    Ensure-Path $TargetFolder
+    [pscustomobject]@{
+        Vendor      = $Vendor
+        Model       = $Model
+        PackageId   = $PackageId
+        Url         = $Url
+        Hash        = $Hash
+        UpdatedAt   = (Get-Date).ToString('s')
+    } | ConvertTo-Json -Depth 5 | Set-Content -Path (Get-PackageMetadataPath -TargetFolder $TargetFolder) -Encoding UTF8
 }
 
 function Expand-CabFile {
@@ -119,11 +232,10 @@ function Read-DriverManifest {
 function Get-DellDriverPackCatalog {
     param([string]$CatalogUrl)
 
-    $cabPath = Join-Path $env:TEMP 'LZG-Dell-DriverPackCatalog.cab'
+    $cabPath = Save-CatalogFileCached -Url $CatalogUrl -FileName 'Dell-DriverPackCatalog.cab'
     $xmlPath = Join-Path $env:TEMP 'LZG-Dell-DriverPackCatalog.xml'
-    Remove-Item -Path $cabPath, $xmlPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path $xmlPath -Force -ErrorAction SilentlyContinue
 
-    Save-SourceFile -Url $CatalogUrl -Destination $cabPath
     $output = & expand.exe $cabPath $xmlPath 2>&1
     if ($LASTEXITCODE -ne 0) {
         throw "Dell catalog uitpakken mislukt: $output"
@@ -171,14 +283,20 @@ function Update-DellDriverPacks {
         }
 
         $targetFolder = Join-Path $Root $model.LocalPath
-        $downloadPath = Join-Path $env:TEMP $match.FileName
+        $packageId = "$($match.Version)-$($match.ReleaseDate.ToString('yyyyMMdd'))"
+        if (Test-PackageCurrent -TargetFolder $targetFolder -Url $match.Url -PackageId $packageId -Hash $match.HashMD5) {
+            Write-Log "Dell overslaan, actueel: $($match.Model)"
+            continue
+        }
+
+        $downloadPath = Save-SourceFileCached -Url $match.Url -FileName $match.FileName
         if (Test-Path $targetFolder) {
             Remove-Item -Path $targetFolder -Recurse -Force
         }
         Ensure-Path $targetFolder
-        Save-SourceFile -Url $match.Url -Destination $downloadPath
 
         Expand-DellPackageFile -PackagePath $downloadPath -Destination $targetFolder
+        Set-PackageMetadata -TargetFolder $targetFolder -Vendor 'Dell' -Model $match.Model -PackageId $packageId -Url $match.Url -Hash $match.HashMD5
         Write-Log "Dell drivers bijgewerkt: $targetFolder"
     }
 }
@@ -186,11 +304,10 @@ function Update-DellDriverPacks {
 function Get-HPDriverPackCatalog {
     param([string]$CatalogUrl)
 
-    $cabPath = Join-Path $env:TEMP 'LZG-HPClientDriverPackCatalog.cab'
+    $cabPath = Save-CatalogFileCached -Url $CatalogUrl -FileName 'HPClientDriverPackCatalog.cab'
     $xmlPath = Join-Path $env:TEMP 'LZG-HPClientDriverPackCatalog.xml'
-    Remove-Item -Path $cabPath, $xmlPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path $xmlPath -Force -ErrorAction SilentlyContinue
 
-    Save-SourceFile -Url $CatalogUrl -Destination $cabPath
     $output = & expand.exe $cabPath $xmlPath 2>&1
     if ($LASTEXITCODE -ne 0) {
         throw "HP catalog uitpakken mislukt: $output"
@@ -199,9 +316,15 @@ function Get-HPDriverPackCatalog {
     [xml]$catalog = Get-Content -Path $xmlPath -Raw
     $softpaqs = @($catalog.NewDataSet.HPClientDriverPackCatalog.SoftPaqList.SoftPaq)
     $models = @($catalog.NewDataSet.HPClientDriverPackCatalog.ProductOSDriverPackList.ProductOSDriverPack)
+    $softpaqById = @{}
+    foreach ($softpaqItem in $softpaqs) {
+        if ($softpaqItem.Id -and -not $softpaqById.ContainsKey([string]$softpaqItem.Id)) {
+            $softpaqById[[string]$softpaqItem.Id] = $softpaqItem
+        }
+    }
 
     foreach ($item in $models) {
-        $softpaq = $softpaqs | Where-Object { $_.Id -eq $item.SoftPaqId } | Select-Object -First 1
+        $softpaq = $softpaqById[[string]$item.SoftPaqId]
         if (-not $softpaq) {
             continue
         }
@@ -251,13 +374,28 @@ function Update-HPDriverPacks {
 
             $safeName = ConvertTo-SafeFolderName $match.Model
             $targetFolder = Join-Path (Join-Path $Root $rule.LocalPathRoot) $safeName
-            $downloadPath = Join-Path $env:TEMP $match.FileName
+            if (Test-PackageCurrent -TargetFolder $targetFolder -Url $match.Url -PackageId $match.SoftPaqId -Hash $match.HashMD5) {
+                Write-Log "HP overslaan, actueel: $($match.Model) $($match.SoftPaqId)"
+                continue
+            }
+
             if (Test-Path $targetFolder) {
                 Remove-Item -Path $targetFolder -Recurse -Force
             }
             Ensure-Path $targetFolder
-            Save-SourceFile -Url $match.Url -Destination $downloadPath
-            Expand-SoftPaqFile -SoftPaqPath $downloadPath -Destination $targetFolder
+
+            $cacheKey = "HP:$($match.SoftPaqId):$($match.HashMD5)"
+            if ($script:ExtractedPackageCache.ContainsKey($cacheKey) -and (Test-Path $script:ExtractedPackageCache[$cacheKey])) {
+                Write-Log "HP hergebruik uitgepakt pakket: $($match.SoftPaqId) -> $($match.Model)"
+                Copy-Item -Path (Join-Path $script:ExtractedPackageCache[$cacheKey] '*') -Destination $targetFolder -Recurse -Force
+            }
+            else {
+                $downloadPath = Save-SourceFileCached -Url $match.Url -FileName $match.FileName
+                Expand-SoftPaqFile -SoftPaqPath $downloadPath -Destination $targetFolder
+                $script:ExtractedPackageCache[$cacheKey] = $targetFolder
+            }
+
+            Set-PackageMetadata -TargetFolder $targetFolder -Vendor 'HP' -Model $match.Model -PackageId $match.SoftPaqId -Url $match.Url -Hash $match.HashMD5
             Write-Log "HP drivers bijgewerkt: $targetFolder"
         }
     }
@@ -299,14 +437,20 @@ function Update-SurfaceDriverPacks {
         }
 
         $targetFolder = Join-Path $Root $model.LocalPath
-        $downloadPath = Join-Path $env:TEMP $package.FileName
+        $packageId = $package.FileName
+        if (Test-PackageCurrent -TargetFolder $targetFolder -Url $package.Url -PackageId $packageId -Hash $package.HashMD5) {
+            Write-Log "Surface overslaan, actueel: $($package.Model)"
+            continue
+        }
+
+        $downloadPath = Save-SourceFileCached -Url $package.Url -FileName $package.FileName
         if (Test-Path $targetFolder) {
             Remove-Item -Path $targetFolder -Recurse -Force
         }
         Ensure-Path $targetFolder
-        Save-SourceFile -Url $package.Url -Destination $downloadPath
         Expand-MsiFile -MsiPath $downloadPath -Destination $targetFolder
         Copy-Item -Path $downloadPath -Destination (Join-Path $targetFolder $package.FileName) -Force
+        Set-PackageMetadata -TargetFolder $targetFolder -Vendor 'Microsoft' -Model $package.Model -PackageId $packageId -Url $package.Url -Hash $package.HashMD5
         Write-Log "Surface drivers en firmware bijgewerkt: $targetFolder"
     }
 }

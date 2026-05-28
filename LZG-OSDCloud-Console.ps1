@@ -503,7 +503,7 @@ exit `$LASTEXITCODE
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded 2>&1 |
         ForEach-Object {
             $line = $_.ToString()
-            if ($line -match 'FOUT|ERROR|mislukt|niet gevonden|gereed|voltooid|geselecteerd|Configuratie gevonden|Configuratie bijgewerkt|Dell Driver Pack catalog|HP Client Driver Pack catalog|HP driverpacks gevonden|Surface geselecteerd|USB-build|OSDCloud USB update|Driverpack update|Gebruik bestaande OSDCloud workspace|Bootmedia blijft beheerd|Nieuwe bootbare|Bestaande OSDCloud|LZG Config/DriverPacks/Tools') {
+            if ($line -match 'FOUT|ERROR|mislukt|niet gevonden|gereed|voltooid|geselecteerd|overslaan|Cache gebruikt|Catalog cache gebruikt|Configuratie gevonden|Configuratie bijgewerkt|Dell Driver Pack catalog|HP Client Driver Pack catalog|HP driverpacks gevonden|Surface geselecteerd|USB-build|OSDCloud USB update|Driverpack update|Gebruik bestaande OSDCloud workspace|Bootmedia blijft beheerd|Nieuwe bootbare|Bestaande OSDCloud|LZG Config/DriverPacks/Tools') {
                 Update-TaskFromOutput -Line $line
                 Add-Output $line
             }
