@@ -17,6 +17,20 @@ Open PowerShell als administrator:
 cd C:\OSDCloud-LZG
 ```
 
+Op een nieuwe beheer-pc kun je de omgeving rechtstreeks vanaf GitHub installeren:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "iwr https://raw.githubusercontent.com/robertzijverden/lzg/main/Install-LZGOSDCloudConsole.ps1 -UseBasicParsing | iex"
+```
+
+Daarna start je de beheerconsole:
+
+```powershell
+C:\OSDCloud-LZG\Start-LZGOSDCloudConsole.cmd
+```
+
+In de console kies je optie `1` voor volledige voorbereiding van de beheer-pc.
+
 Test eerst zonder grote downloads:
 
 ```powershell
