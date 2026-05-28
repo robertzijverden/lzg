@@ -4,25 +4,108 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $script:RepoZipUrl = 'https://github.com/robertzijverden/lzg/archive/refs/heads/main.zip'
-$script:RawConfigUrl = 'https://raw.githubusercontent.com/robertzijverden/lzg/main/osdcloud-config.json'
 $script:ConsoleTitle = 'LZG OSDCLOUD BEHEERCONSOLE'
+$script:ScreenWidth = 120
+$script:ScreenHeight = 35
+$script:MenuTop = 9
+$script:OutputTop = 22
+$script:OutputHeight = 9
+$script:OutputLines = New-Object System.Collections.Generic.List[string]
+$script:CurrentAction = 'Gereed'
 
-function Write-Ui {
-    param(
-        [string]$Text = '',
-        [ConsoleColor]$ForegroundColor = [ConsoleColor]::Green
-    )
-    Write-Host $Text -ForegroundColor $ForegroundColor
+function Initialize-LZGConsole {
+    try {
+        Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public class LZGConsoleWindow {
+    [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+}
+'@ -ErrorAction SilentlyContinue
+        [void][LZGConsoleWindow]::ShowWindow([LZGConsoleWindow]::GetConsoleWindow(), 3)
+    }
+    catch {
+    }
+
+    try {
+        if ([Console]::LargestWindowWidth -ge $script:ScreenWidth) {
+            [Console]::BufferWidth = $script:ScreenWidth
+            [Console]::WindowWidth = $script:ScreenWidth
+        }
+        if ([Console]::LargestWindowHeight -ge $script:ScreenHeight) {
+            [Console]::BufferHeight = $script:ScreenHeight
+            [Console]::WindowHeight = $script:ScreenHeight
+        }
+        [Console]::Title = $script:ConsoleTitle
+        [Console]::CursorVisible = $false
+    }
+    catch {
+    }
 }
 
-function Wait-LZGKey {
-    if (-not $NoPause) {
-        Write-Ui ''
-        Write-Ui 'Druk op ENTER om terug te keren naar het menu...'
-        [void](Read-Host)
+function Limit-Text {
+    param(
+        [string]$Text,
+        [int]$Width
+    )
+
+    if ($null -eq $Text) {
+        $Text = ''
+    }
+    $Text = $Text -replace "`r|`n", ' '
+    if ($Text.Length -gt $Width) {
+        return $Text.Substring(0, [Math]::Max(0, $Width - 1))
+    }
+    return $Text.PadRight($Width)
+}
+
+function Write-At {
+    param(
+        [int]$Left,
+        [int]$Top,
+        [string]$Text,
+        [ConsoleColor]$ForegroundColor = [ConsoleColor]::Green,
+        [ConsoleColor]$BackgroundColor = [ConsoleColor]::Black
+    )
+
+    try {
+        [Console]::SetCursorPosition($Left, $Top)
+        Write-Host $Text -ForegroundColor $ForegroundColor -BackgroundColor $BackgroundColor -NoNewline
+    }
+    catch {
+    }
+}
+
+function Draw-Line {
+    param(
+        [int]$Top,
+        [string]$Char = '=',
+        [ConsoleColor]$Color = [ConsoleColor]::Green
+    )
+    Write-At -Left 0 -Top $Top -Text ($Char * $script:ScreenWidth) -ForegroundColor $Color
+}
+
+function Draw-Box {
+    param(
+        [int]$Left,
+        [int]$Top,
+        [int]$Width,
+        [int]$Height,
+        [string]$Title = ''
+    )
+
+    Write-At $Left $Top ('+' + ('-' * ($Width - 2)) + '+')
+    for ($row = 1; $row -lt ($Height - 1); $row++) {
+        Write-At $Left ($Top + $row) ('|' + (' ' * ($Width - 2)) + '|')
+    }
+    Write-At $Left ($Top + $Height - 1) ('+' + ('-' * ($Width - 2)) + '+')
+    if ($Title) {
+        Write-At ($Left + 2) $Top (" $Title ") Yellow
     }
 }
 
@@ -66,17 +149,94 @@ function Get-LZGStatus {
     }
 }
 
-function Show-Header {
+function Add-Output {
+    param(
+        [string]$Text,
+        [ConsoleColor]$Color = [ConsoleColor]::Green
+    )
+
+    if ($null -eq $Text) {
+        $Text = ''
+    }
+
+    foreach ($line in ($Text -split "`r?`n")) {
+        if ($script:OutputLines.Count -ge $script:OutputHeight) {
+            $script:OutputLines.RemoveAt(0)
+        }
+        $script:OutputLines.Add($line)
+    }
+    Render-OutputPane
+}
+
+function Clear-Output {
+    $script:OutputLines.Clear()
+    Render-OutputPane
+}
+
+function Render-OutputPane {
+    $contentWidth = $script:ScreenWidth - 4
+    for ($i = 0; $i -lt $script:OutputHeight; $i++) {
+        $text = ''
+        if ($i -lt $script:OutputLines.Count) {
+            $text = $script:OutputLines[$i]
+        }
+        Write-At 2 ($script:OutputTop + 1 + $i) (Limit-Text $text $contentWidth) Green
+    }
+}
+
+function Render-Screen {
     Clear-Host
     $status = Get-LZGStatus
-    Write-Host ''
-    Write-Host '===============================================================================' -ForegroundColor Green
-    Write-Host (" {0,-77}" -f $script:ConsoleTitle) -ForegroundColor Green
-    Write-Host '===============================================================================' -ForegroundColor Green
-    Write-Host (" Systeem : {0,-28} Admin : {1,-3}  OSD : {2,-12} OSDCloud : {3}" -f $env:COMPUTERNAME, $status.Admin, $status.OSDModule, $status.OSDCloudModule) -ForegroundColor Green
-    Write-Host (" Root    : {0}" -f $status.Root) -ForegroundColor Green
-    Write-Host (" WS      : {0}   BootWIM : {1}   Config : {2}   DriverManifest : {3}" -f $status.Workspace, $status.BootWim, $status.Config, $status.DriverManifest) -ForegroundColor Green
-    Write-Host '-------------------------------------------------------------------------------' -ForegroundColor Green
+
+    Draw-Line 0 '='
+    Write-At 2 1 (Limit-Text $script:ConsoleTitle 78) Yellow
+    Write-At 84 1 (Limit-Text ("{0:yyyy-MM-dd HH:mm}" -f (Get-Date)) 32) Green
+    Draw-Line 2 '='
+
+    Write-At 2 3 (Limit-Text ("SYSTEEM: {0}   ADMIN: {1}" -f $env:COMPUTERNAME, $status.Admin) 56)
+    Write-At 62 3 (Limit-Text ("ACTIE: {0}" -f $script:CurrentAction) 55) Cyan
+    Write-At 2 4 (Limit-Text ("ROOT: {0}" -f $status.Root) 115)
+    Write-At 2 5 (Limit-Text ("OSD: {0}   OSDCLOUD: {1}   WORKSPACE: {2}   BOOT.WIM: {3}" -f $status.OSDModule, $status.OSDCloudModule, $status.Workspace, $status.BootWim) 115)
+    Write-At 2 6 (Limit-Text ("CONFIG: {0}   DRIVER MANIFEST: {1}" -f $status.Config, $status.DriverManifest) 115)
+    Draw-Line 7 '-'
+
+    Draw-Box 0 8 120 13 'MENU'
+    Write-At 3 10 ' 1  Volledige voorbereiding beheer-pc'
+    Write-At 3 11 ' 2  Synchroniseer deze beheer-pc met GitHub'
+    Write-At 3 12 ' 3  Installeer/update vereiste PowerShell modules'
+    Write-At 3 13 ' 4  Stel OSDCloud workspace in'
+    Write-At 3 14 ' 5  Test vendor catalogi zonder grote downloads'
+    Write-At 3 15 ' 6  Download driverpacks en synchroniseer workspace'
+    Write-At 64 10 ' 7  Maak nieuwe bootbare OSDCloud USB'
+    Write-At 64 11 ' 8  Werk bestaande OSDCloud USB bij'
+    Write-At 64 12 ' 9  Update modules op bestaande USB'
+    Write-At 64 13 '10  Toon handmatige OSDCloud commands'
+    Write-At 64 14 '11  Toon README'
+    Write-At 64 15 ' 0  Afsluiten'
+    Write-At 3 18 'Fysieke USB-acties gebruiken altijd OSD New-OSDCloudUSB / Update-OSDCloudUSB.' Cyan
+
+    Draw-Box 0 $script:OutputTop 120 ($script:OutputHeight + 2) 'OUTPUT'
+    Render-OutputPane
+    Draw-Box 0 33 120 2 'COMMAND'
+}
+
+function Read-MenuChoice {
+    Write-At 2 34 (Limit-Text 'Keuze: ' 8) Yellow
+    try { [Console]::CursorVisible = $true } catch {}
+    try { [Console]::SetCursorPosition(10, 34) } catch {}
+    $choice = Read-Host
+    try { [Console]::CursorVisible = $false } catch {}
+    return $choice
+}
+
+function Wait-LZGKey {
+    if (-not $NoPause) {
+        Write-At 2 34 (Limit-Text 'Druk op ENTER om terug te keren naar het menu...' 80) Yellow
+        try { [Console]::CursorVisible = $true } catch {}
+        try { [Console]::SetCursorPosition(51, 34) } catch {}
+        [void](Read-Host)
+        try { [Console]::CursorVisible = $false } catch {}
+    }
 }
 
 function Invoke-Step {
@@ -85,19 +245,19 @@ function Invoke-Step {
         [scriptblock]$Action
     )
 
-    Show-Header
-    Write-Ui "ACTIE: $Title" Yellow
-    Write-Ui '-------------------------------------------------------------------------------'
+    $script:CurrentAction = $Title
+    Clear-Output
+    Render-Screen
+    Add-Output "Start: $Title"
     try {
         & $Action
-        Write-Ui ''
-        Write-Ui 'ACTIE GEREED.' Cyan
+        Add-Output 'Actie gereed.'
     }
     catch {
-        Write-Ui ''
-        Write-Ui "FOUT: $($_.Exception.Message)" Red
+        Add-Output "FOUT: $($_.Exception.Message)"
     }
     Wait-LZGKey
+    $script:CurrentAction = 'Gereed'
 }
 
 function Sync-RepositoryContent {
@@ -130,6 +290,7 @@ function Sync-RepositoryContent {
             Remove-Item -Path $destination -Recurse -Force -ErrorAction SilentlyContinue
         }
         Copy-Item -Path $source -Destination (Split-Path $destination) -Recurse -Force
+        Add-Output "Sync: $item"
     }
 
     foreach ($folder in @('DriverPacks', 'Tools', 'Workspace')) {
@@ -145,15 +306,16 @@ function Sync-LZGFromGitHub {
 
     try {
         Ensure-Directory $tempRoot
-        Write-Ui "Download repository: $script:RepoZipUrl"
+        Add-Output "Download repository: $script:RepoZipUrl"
         Invoke-WebRequest -Uri $script:RepoZipUrl -OutFile $zipPath -UseBasicParsing
+        Add-Output 'Pak repository uit.'
         Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
         $sourceRoot = Get-ChildItem -Path $extractPath -Directory | Select-Object -First 1
         if (-not $sourceRoot) {
             throw 'Uitgepakte repository niet gevonden.'
         }
         Sync-RepositoryContent -SourceRoot $sourceRoot.FullName -TargetRoot $Root
-        Write-Ui "Gesynchroniseerd naar: $Root"
+        Add-Output "Gesynchroniseerd naar: $Root"
     }
     finally {
         Remove-Item -Path $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
@@ -162,16 +324,17 @@ function Sync-LZGFromGitHub {
 
 function Install-RequiredModules {
     $scope = if (Test-IsAdmin) { 'AllUsers' } else { 'CurrentUser' }
-    Write-Ui "PowerShell modules installeren/bijwerken in scope: $scope"
+    Add-Output "PowerShell modules installeren/bijwerken in scope: $scope"
 
     if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
+        Add-Output 'NuGet package provider installeren.'
         Install-PackageProvider -Name NuGet -Force -Scope $scope | Out-Null
     }
 
     Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
 
     foreach ($module in @('OSD', 'OSDCloud')) {
-        Write-Ui "Controleer module: $module"
+        Add-Output "Controleer module: $module"
         if (Get-Module -ListAvailable $module) {
             Update-Module -Name $module -Force -ErrorAction SilentlyContinue
         }
@@ -186,7 +349,7 @@ function Set-LZGWorkspace {
     $workspace = Join-Path $Root 'Workspace'
     Ensure-Directory $workspace
     Set-OSDCloudWorkspace -WorkspacePath $workspace | Out-Null
-    Write-Ui "OSDCloud workspace ingesteld op: $workspace"
+    Add-Output "OSDCloud workspace ingesteld op: $workspace"
 }
 
 function Invoke-LZGScript {
@@ -200,77 +363,68 @@ function Invoke-LZGScript {
         throw "Script niet gevonden: $scriptPath"
     }
 
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $scriptPath @Arguments
+    Add-Output ("Uitvoeren: {0} {1}" -f $ScriptName, ($Arguments -join ' '))
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $scriptPath @Arguments 2>&1 |
+        ForEach-Object { Add-Output $_.ToString() }
+
     if ($LASTEXITCODE -ne 0) {
         throw "$ScriptName eindigde met exitcode $LASTEXITCODE"
     }
 }
 
 function Show-OSDCommandHelp {
-    Write-Ui 'Handmatige OSDCloud commands:' Yellow
-    Write-Ui ''
-    Write-Ui 'Import-Module OSD'
-    Write-Ui "Set-OSDCloudWorkspace -WorkspacePath $Root\Workspace"
-    Write-Ui 'New-OSDCloudUSB'
-    Write-Ui 'Update-OSDCloudUSB'
-    Write-Ui ''
-    Write-Ui 'Gebruik voor fysieke USB alleen de OSD commands. Niet handmatig kopieren.'
+    Add-Output 'Handmatige OSDCloud commands:'
+    Add-Output 'Import-Module OSD'
+    Add-Output "Set-OSDCloudWorkspace -WorkspacePath $Root\Workspace"
+    Add-Output 'New-OSDCloudUSB'
+    Add-Output 'Update-OSDCloudUSB'
+    Add-Output 'Gebruik voor fysieke USB alleen de OSD commands. Niet handmatig kopieren.'
 }
 
-function Show-Menu {
-    Show-Header
-    Write-Ui '  1. Volledige voorbereiding beheer-pc'
-    Write-Ui '  2. Synchroniseer deze beheer-pc met GitHub'
-    Write-Ui '  3. Installeer/update vereiste PowerShell modules'
-    Write-Ui '  4. Stel OSDCloud workspace in'
-    Write-Ui '  5. Test vendor catalogi zonder grote downloads'
-    Write-Ui '  6. Download driverpacks en synchroniseer workspace'
-    Write-Ui '  7. Maak nieuwe bootbare OSDCloud USB (OSD New-OSDCloudUSB)'
-    Write-Ui '  8. Werk bestaande OSDCloud USB bij (OSD Update-OSDCloudUSB)'
-    Write-Ui '  9. Update OSD/Autopilot modules op bestaande USB'
-    Write-Ui ' 10. Toon handmatige OSDCloud commands'
-    Write-Ui ' 11. Toon README'
-    Write-Ui '  0. Afsluiten'
-    Write-Ui '-------------------------------------------------------------------------------'
-}
-
-do {
-    Show-Menu
-    $choice = Read-Host 'Keuze'
-
-    switch ($choice) {
-        '1' {
-            Invoke-Step 'Volledige voorbereiding beheer-pc' {
-                Sync-LZGFromGitHub
-                Install-RequiredModules
-                Set-LZGWorkspace
-                Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' -Arguments @('-CatalogOnly')
-            }
-        }
-        '2' { Invoke-Step 'Synchroniseer deze beheer-pc met GitHub' { Sync-LZGFromGitHub } }
-        '3' { Invoke-Step 'Installeer/update vereiste PowerShell modules' { Install-RequiredModules } }
-        '4' { Invoke-Step 'Stel OSDCloud workspace in' { Set-LZGWorkspace } }
-        '5' { Invoke-Step 'Test vendor catalogi zonder grote downloads' { Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' -Arguments @('-CatalogOnly') } }
-        '6' { Invoke-Step 'Download driverpacks en synchroniseer workspace' { Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' } }
-        '7' { Invoke-Step 'Maak nieuwe bootbare OSDCloud USB' { Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' -Arguments @('-CreatePhysicalUSB') } }
-        '8' { Invoke-Step 'Werk bestaande OSDCloud USB bij' { Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' -Arguments @('-UpdatePhysicalUSB') } }
-        '9' { Invoke-Step 'Update modules op bestaande OSDCloud USB' { Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' -Arguments @('-PSUpdate') } }
-        '10' { Invoke-Step 'Handmatige OSDCloud commands' { Show-OSDCommandHelp } }
-        '11' {
-            Invoke-Step 'README' {
-                $readme = Join-Path $Root 'README-USB.md'
-                if (Test-Path $readme) {
-                    Get-Content $readme | ForEach-Object { Write-Ui $_ }
-                }
-                else {
-                    Write-Ui "README niet gevonden: $readme" Red
-                }
-            }
-        }
-        '0' { break }
-        default {
-            Write-Ui 'Ongeldige keuze.' Red
-            Start-Sleep -Seconds 1
-        }
+function Show-Readme {
+    $readme = Join-Path $Root 'README-USB.md'
+    if (-not (Test-Path $readme)) {
+        Add-Output "README niet gevonden: $readme"
+        return
     }
-} while ($true)
+
+    Get-Content $readme | Select-Object -First 80 | ForEach-Object { Add-Output $_ }
+}
+
+Initialize-LZGConsole
+try {
+    do {
+        Render-Screen
+        $choice = Read-MenuChoice
+
+        switch ($choice) {
+            '1' {
+                Invoke-Step 'Volledige voorbereiding beheer-pc' {
+                    Sync-LZGFromGitHub
+                    Install-RequiredModules
+                    Set-LZGWorkspace
+                    Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' -Arguments @('-CatalogOnly')
+                }
+            }
+            '2' { Invoke-Step 'Synchroniseer deze beheer-pc met GitHub' { Sync-LZGFromGitHub } }
+            '3' { Invoke-Step 'Installeer/update vereiste PowerShell modules' { Install-RequiredModules } }
+            '4' { Invoke-Step 'Stel OSDCloud workspace in' { Set-LZGWorkspace } }
+            '5' { Invoke-Step 'Test vendor catalogi zonder grote downloads' { Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' -Arguments @('-CatalogOnly') } }
+            '6' { Invoke-Step 'Download driverpacks en synchroniseer workspace' { Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' } }
+            '7' { Invoke-Step 'Maak nieuwe bootbare OSDCloud USB' { Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' -Arguments @('-CreatePhysicalUSB') } }
+            '8' { Invoke-Step 'Werk bestaande OSDCloud USB bij' { Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' -Arguments @('-UpdatePhysicalUSB') } }
+            '9' { Invoke-Step 'Update modules op bestaande OSDCloud USB' { Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' -Arguments @('-PSUpdate') } }
+            '10' { Invoke-Step 'Handmatige OSDCloud commands' { Show-OSDCommandHelp } }
+            '11' { Invoke-Step 'README' { Show-Readme } }
+            '0' { break }
+            default {
+                Add-Output 'Ongeldige keuze.'
+                Start-Sleep -Milliseconds 800
+            }
+        }
+    } while ($true)
+}
+finally {
+    try { [Console]::CursorVisible = $true } catch {}
+    Clear-Host
+}
