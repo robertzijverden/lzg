@@ -15,6 +15,7 @@ $script:MenuTop = 9
 $script:OutputTop = 22
 $script:OutputHeight = 9
 $script:OutputLines = New-Object System.Collections.Generic.List[string]
+$script:TaskItems = New-Object System.Collections.Generic.List[object]
 $script:CurrentAction = 'Gereed'
 
 function Initialize-LZGConsole {
@@ -168,6 +169,95 @@ function Add-Output {
     Render-OutputPane
 }
 
+function Set-TaskList {
+    param([string[]]$Tasks)
+
+    $script:TaskItems.Clear()
+    foreach ($task in $Tasks) {
+        $script:TaskItems.Add([pscustomobject]@{
+            Name   = $task
+            Status = 'WACHT'
+        })
+    }
+    Render-TasksPane
+}
+
+function Set-TaskStatus {
+    param(
+        [string]$Name,
+        [string]$Status
+    )
+
+    $task = $script:TaskItems | Where-Object { $_.Name -eq $Name } | Select-Object -First 1
+    if ($task) {
+        $task.Status = $Status
+        Render-TasksPane
+    }
+}
+
+function Invoke-Task {
+    param(
+        [string]$Name,
+        [scriptblock]$Action
+    )
+
+    Set-TaskStatus -Name $Name -Status 'BEZIG'
+    Add-Output "BEZIG: $Name"
+    try {
+        & $Action
+        Set-TaskStatus -Name $Name -Status 'KLAAR'
+        Add-Output "KLAAR: $Name"
+    }
+    catch {
+        Set-TaskStatus -Name $Name -Status 'FOUT'
+        throw
+    }
+}
+
+function Update-TaskFromOutput {
+    param([string]$Line)
+
+    if ($Line -match 'Configuratie gevonden|Configuratie bijgewerkt') {
+        Set-TaskStatus -Name 'Config ophalen' -Status 'KLAAR'
+    }
+    if ($Line -match 'Dell Driver Pack catalog|Dell geselecteerd') {
+        Set-TaskStatus -Name 'Dell catalogus' -Status 'KLAAR'
+    }
+    if ($Line -match 'HP Client Driver Pack catalog|HP driverpacks gevonden') {
+        Set-TaskStatus -Name 'HP catalogus' -Status 'KLAAR'
+    }
+    if ($Line -match 'Surface geselecteerd') {
+        Set-TaskStatus -Name 'Surface catalogus' -Status 'KLAAR'
+    }
+    if ($Line -match 'Dell drivers bijgewerkt|Dell geselecteerd') {
+        Set-TaskStatus -Name 'Dell downloaden' -Status 'KLAAR'
+    }
+    if ($Line -match 'HP drivers bijgewerkt|HP driverpacks gevonden') {
+        Set-TaskStatus -Name 'HP downloaden' -Status 'BEZIG'
+    }
+    if ($Line -match 'Surface drivers en firmware bijgewerkt|Surface geselecteerd') {
+        Set-TaskStatus -Name 'Surface downloaden' -Status 'BEZIG'
+    }
+    if ($Line -match 'LZG Config/DriverPacks/Tools|workspace gesynchroniseerd') {
+        Set-TaskStatus -Name 'Workspace sync' -Status 'KLAAR'
+        Set-TaskStatus -Name 'Driver/workspace sync' -Status 'KLAAR'
+    }
+    if ($Line -match 'Nieuwe bootbare OSDCloud USB') {
+        Set-TaskStatus -Name 'OSD New-OSDCloudUSB' -Status 'BEZIG'
+    }
+    if ($Line -match 'Bestaande OSDCloud USB|Update-OSDCloudUSB') {
+        Set-TaskStatus -Name 'OSD Update-OSDCloudUSB' -Status 'BEZIG'
+    }
+    if ($Line -match 'FOUT|ERROR|mislukt') {
+        foreach ($task in $script:TaskItems) {
+            if ($task.Status -eq 'BEZIG') {
+                $task.Status = 'FOUT'
+            }
+        }
+        Render-TasksPane
+    }
+}
+
 function Clear-Output {
     $script:OutputLines.Clear()
     Render-OutputPane
@@ -181,6 +271,26 @@ function Render-OutputPane {
             $text = $script:OutputLines[$i]
         }
         Write-At 2 ($script:OutputTop + 1 + $i) (Limit-Text $text $contentWidth) Green
+    }
+}
+
+function Render-TasksPane {
+    $left = 62
+    $top = 10
+    $width = 55
+    for ($i = 0; $i -lt 9; $i++) {
+        $text = ''
+        if ($i -lt $script:TaskItems.Count) {
+            $task = $script:TaskItems[$i]
+            $mark = switch ($task.Status) {
+                'KLAAR' { '[OK]' }
+                'BEZIG' { '[..]' }
+                'FOUT' { '[!!]' }
+                default { '[  ]' }
+            }
+            $text = "{0} {1}" -f $mark, $task.Name
+        }
+        Write-At $left ($top + $i) (Limit-Text $text $width) Green
     }
 }
 
@@ -200,20 +310,20 @@ function Render-Screen {
     Write-At 2 6 (Limit-Text ("CONFIG: {0}   DRIVER MANIFEST: {1}" -f $status.Config, $status.DriverManifest) 115)
     Draw-Line 7 '-'
 
-    Draw-Box 0 8 120 13 'MENU'
+    Draw-Box 0 8 60 13 'MENU'
     Write-At 3 10 ' 1  Volledige voorbereiding beheer-pc'
-    Write-At 3 11 ' 2  Synchroniseer deze beheer-pc met GitHub'
-    Write-At 3 12 ' 3  Installeer/update vereiste PowerShell modules'
+    Write-At 3 11 ' 2  Synchroniseer met GitHub'
+    Write-At 3 12 ' 3  Installeer/update modules'
     Write-At 3 13 ' 4  Stel OSDCloud workspace in'
-    Write-At 3 14 ' 5  Test vendor catalogi zonder grote downloads'
-    Write-At 3 15 ' 6  Download driverpacks en synchroniseer workspace'
-    Write-At 64 10 ' 7  Maak nieuwe bootbare OSDCloud USB'
-    Write-At 64 11 ' 8  Werk bestaande OSDCloud USB bij'
-    Write-At 64 12 ' 9  Update modules op bestaande USB'
-    Write-At 64 13 '10  Toon handmatige OSDCloud commands'
-    Write-At 64 14 '11  Toon README'
-    Write-At 64 15 ' 0  Afsluiten'
-    Write-At 3 18 'Fysieke USB-acties gebruiken altijd OSD New-OSDCloudUSB / Update-OSDCloudUSB.' Cyan
+    Write-At 3 14 ' 5  Test vendor catalogi'
+    Write-At 3 15 ' 6  Download driverpacks'
+    Write-At 3 16 ' 7  Maak nieuwe OSDCloud USB'
+    Write-At 3 17 ' 8  Werk bestaande USB bij'
+    Write-At 3 18 ' 9  Update modules op USB'
+    Write-At 3 19 '10  Commands   11 README   0 Afsluiten'
+
+    Draw-Box 60 8 60 13 'TAKEN'
+    Render-TasksPane
 
     Draw-Box 0 $script:OutputTop 120 ($script:OutputHeight + 2) 'OUTPUT'
     Render-OutputPane
@@ -242,11 +352,18 @@ function Wait-LZGKey {
 function Invoke-Step {
     param(
         [string]$Title,
-        [scriptblock]$Action
+        [scriptblock]$Action,
+        [string[]]$Tasks = @()
     )
 
     $script:CurrentAction = $Title
     Clear-Output
+    if ($Tasks.Count -gt 0) {
+        Set-TaskList -Tasks $Tasks
+    }
+    else {
+        Set-TaskList -Tasks @($Title)
+    }
     Render-Screen
     Add-Output "Start: $Title"
     try {
@@ -258,6 +375,7 @@ function Invoke-Step {
     }
     Wait-LZGKey
     $script:CurrentAction = 'Gereed'
+    Set-TaskList -Tasks @()
 }
 
 function Sync-RepositoryContent {
@@ -307,7 +425,13 @@ function Sync-LZGFromGitHub {
     try {
         Ensure-Directory $tempRoot
         Add-Output "Download repository: $script:RepoZipUrl"
-        Invoke-WebRequest -Uri $script:RepoZipUrl -OutFile $zipPath -UseBasicParsing
+        $webClient = [System.Net.WebClient]::new()
+        try {
+            $webClient.DownloadFile($script:RepoZipUrl, $zipPath)
+        }
+        finally {
+            $webClient.Dispose()
+        }
         Add-Output 'Pak repository uit.'
         Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
         $sourceRoot = Get-ChildItem -Path $extractPath -Directory | Select-Object -First 1
@@ -364,8 +488,26 @@ function Invoke-LZGScript {
     }
 
     Add-Output ("Uitvoeren: {0} {1}" -f $ScriptName, ($Arguments -join ' '))
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $scriptPath @Arguments 2>&1 |
-        ForEach-Object { Add-Output $_.ToString() }
+
+    $encodedCommand = @"
+`$ProgressPreference = 'SilentlyContinue'
+`$VerbosePreference = 'SilentlyContinue'
+`$InformationPreference = 'SilentlyContinue'
+& '$scriptPath' $($Arguments -join ' ')
+exit `$LASTEXITCODE
+"@
+
+    $bytes = [System.Text.Encoding]::Unicode.GetBytes($encodedCommand)
+    $encoded = [Convert]::ToBase64String($bytes)
+
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded 2>&1 |
+        ForEach-Object {
+            $line = $_.ToString()
+            if ($line -match 'FOUT|ERROR|mislukt|niet gevonden|gereed|voltooid|geselecteerd|Configuratie gevonden|Configuratie bijgewerkt|Dell Driver Pack catalog|HP Client Driver Pack catalog|HP driverpacks gevonden|Surface geselecteerd|USB-build|OSDCloud USB update|Driverpack update|Gebruik bestaande OSDCloud workspace|Bootmedia blijft beheerd|Nieuwe bootbare|Bestaande OSDCloud|LZG Config/DriverPacks/Tools') {
+                Update-TaskFromOutput -Line $line
+                Add-Output $line
+            }
+        }
 
     if ($LASTEXITCODE -ne 0) {
         throw "$ScriptName eindigde met exitcode $LASTEXITCODE"
@@ -400,22 +542,62 @@ try {
         switch ($choice) {
             '1' {
                 Invoke-Step 'Volledige voorbereiding beheer-pc' {
-                    Sync-LZGFromGitHub
-                    Install-RequiredModules
-                    Set-LZGWorkspace
-                    Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' -Arguments @('-CatalogOnly')
-                }
+                    Invoke-Task 'GitHub synchroniseren' { Sync-LZGFromGitHub }
+                    Invoke-Task 'Modules controleren' { Install-RequiredModules }
+                    Invoke-Task 'Workspace instellen' { Set-LZGWorkspace }
+                    Invoke-Task 'Vendor catalogi testen' { Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' -Arguments @('-CatalogOnly') }
+                } -Tasks @('GitHub synchroniseren', 'Modules controleren', 'Workspace instellen', 'Vendor catalogi testen')
             }
-            '2' { Invoke-Step 'Synchroniseer deze beheer-pc met GitHub' { Sync-LZGFromGitHub } }
-            '3' { Invoke-Step 'Installeer/update vereiste PowerShell modules' { Install-RequiredModules } }
-            '4' { Invoke-Step 'Stel OSDCloud workspace in' { Set-LZGWorkspace } }
-            '5' { Invoke-Step 'Test vendor catalogi zonder grote downloads' { Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' -Arguments @('-CatalogOnly') } }
-            '6' { Invoke-Step 'Download driverpacks en synchroniseer workspace' { Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' } }
-            '7' { Invoke-Step 'Maak nieuwe bootbare OSDCloud USB' { Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' -Arguments @('-CreatePhysicalUSB') } }
-            '8' { Invoke-Step 'Werk bestaande OSDCloud USB bij' { Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' -Arguments @('-UpdatePhysicalUSB') } }
-            '9' { Invoke-Step 'Update modules op bestaande OSDCloud USB' { Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' -Arguments @('-PSUpdate') } }
-            '10' { Invoke-Step 'Handmatige OSDCloud commands' { Show-OSDCommandHelp } }
-            '11' { Invoke-Step 'README' { Show-Readme } }
+            '2' {
+                Invoke-Step 'Synchroniseer deze beheer-pc met GitHub' {
+                    Invoke-Task 'GitHub synchroniseren' { Sync-LZGFromGitHub }
+                } -Tasks @('GitHub synchroniseren')
+            }
+            '3' {
+                Invoke-Step 'Installeer/update vereiste PowerShell modules' {
+                    Invoke-Task 'Modules controleren' { Install-RequiredModules }
+                } -Tasks @('Modules controleren')
+            }
+            '4' {
+                Invoke-Step 'Stel OSDCloud workspace in' {
+                    Invoke-Task 'Workspace instellen' { Set-LZGWorkspace }
+                } -Tasks @('Workspace instellen')
+            }
+            '5' {
+                Invoke-Step 'Test vendor catalogi zonder grote downloads' {
+                    Invoke-Task 'Vendor catalogi testen' { Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' -Arguments @('-CatalogOnly') }
+                } -Tasks @('Config ophalen', 'Dell catalogus', 'HP catalogus', 'Surface catalogus', 'Workspace sync')
+            }
+            '6' {
+                Invoke-Step 'Download driverpacks en synchroniseer workspace' {
+                    Invoke-Task 'Driverpacks downloaden' { Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' }
+                } -Tasks @('Config ophalen', 'Dell downloaden', 'HP downloaden', 'Surface downloaden', 'Workspace sync')
+            }
+            '7' {
+                Invoke-Step 'Maak nieuwe bootbare OSDCloud USB' {
+                    Invoke-Task 'Nieuwe USB maken via OSD' { Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' -Arguments @('-CreatePhysicalUSB') }
+                } -Tasks @('Driver/workspace sync', 'OSD New-OSDCloudUSB')
+            }
+            '8' {
+                Invoke-Step 'Werk bestaande OSDCloud USB bij' {
+                    Invoke-Task 'Bestaande USB bijwerken via OSD' { Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' -Arguments @('-UpdatePhysicalUSB') }
+                } -Tasks @('Driver/workspace sync', 'OSD Update-OSDCloudUSB')
+            }
+            '9' {
+                Invoke-Step 'Update modules op bestaande OSDCloud USB' {
+                    Invoke-Task 'Modules op USB bijwerken' { Invoke-LZGScript -ScriptName 'Update-OSDCloudUSB.ps1' -Arguments @('-PSUpdate') }
+                } -Tasks @('Workspace sync', 'OSD Update-OSDCloudUSB -PSUpdate')
+            }
+            '10' {
+                Invoke-Step 'Handmatige OSDCloud commands' {
+                    Invoke-Task 'Commands tonen' { Show-OSDCommandHelp }
+                } -Tasks @('Commands tonen')
+            }
+            '11' {
+                Invoke-Step 'README' {
+                    Invoke-Task 'README tonen' { Show-Readme }
+                } -Tasks @('README tonen')
+            }
             '0' { break }
             default {
                 Add-Output 'Ongeldige keuze.'
