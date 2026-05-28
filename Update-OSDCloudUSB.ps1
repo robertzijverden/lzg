@@ -1,7 +1,8 @@
 param(
     [string]$Root = "$PSScriptRoot",
     [string]$OutputFolder = "$PSScriptRoot\Workspace\USB",
-    [string]$UsbDriveLetter = ''
+    [string]$UsbDriveLetter = '',
+    [switch]$CatalogOnly
 )
 
 function Write-Log {
@@ -79,7 +80,12 @@ catch {
 $driverPackScript = Join-Path $Root 'Update-DriverPacks.ps1'
 if (Test-Path $driverPackScript) {
     Write-Log "Update offline driverpacks en tools."
-    & $driverPackScript -Root $Root
+    if ($CatalogOnly) {
+        & $driverPackScript -Root $Root -CatalogOnly
+    }
+    else {
+        & $driverPackScript -Root $Root
+    }
 }
 else {
     Write-Log "Update-DriverPacks.ps1 niet gevonden: $driverPackScript"

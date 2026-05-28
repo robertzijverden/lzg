@@ -55,6 +55,12 @@ Controleer eerst of de officiële vendor-catalogi bereikbaar zijn zonder grote d
 .\Update-DriverPacks.ps1 -CatalogOnly
 ```
 
+Of test de volledige USB-flow zonder grote driverdownloads:
+
+```powershell
+.\Update-OSDCloudUSB.ps1 -CatalogOnly
+```
+
 Per vendor:
 
 ```powershell
